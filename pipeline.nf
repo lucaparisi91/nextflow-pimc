@@ -3,7 +3,6 @@
 params.runs = "$projectDir/sims.dat"
 nextflow.enable.dsl=2
 
-
 process create_optimizations {
 
     input:
@@ -22,12 +21,11 @@ process split_runs {
 
     input:
     tuple val(key) , path(data)
-
+    val label
     output:
-    tuple val(key), path("split/*.dat")
-
+    tuple val(key), path("split/*")
     """
-    $baseDir/scripts/split_rows.py $data --out "split"
+    $baseDir/scripts/split_rows.py $data --out split --label $label
     """
 }
 
@@ -99,8 +97,6 @@ process anal_observable
 
 process gather_observable
 {
-    publishDir "$projectDir/agg/$key"
-
     input:
         tuple val(key), path( "observable*.dat")
     output:
@@ -110,6 +106,8 @@ process gather_observable
     $baseDir/scripts/gather.py observable*.dat --out collect_data.dat
     """
 }
+
+
 
 
 process optimized_parameter
@@ -134,8 +132,12 @@ process process_for_main_run
     """
     #!/usr/bin/env python
     import pandas as pd
+    import numpy as np
+
     data=pd.read_csv("parameters.dat",delim_whitespace=True)
-    data["nBlocks"]=1000
+    data["nBlocks"]=100
+    seed=pd.DataFrame({"seed" : np.arange(567,567+10)})
+    data=pd.merge( data.drop("seed",axis=1),seed,how="cross")
     data.to_csv("parameters_main_run.dat",sep="\t")
     """
 }
@@ -145,11 +147,13 @@ process process_for_main_run
  * Define the workflow
  */
 
+
 workflow optimize {
     take: sims
     main:
         grouped_sims = sims | map{ file -> tuple( file[1].name.toString().tokenize('_').get(0),file[1] )} 
-        params_files = grouped_sims | create_optimizations | split_runs | transpose | map { el -> tuple( tuple(el[0],el[1].getName()) , el[1]   )   } 
+        tab=grouped_sims | create_optimizations
+        params_files = split_runs(tab,"CA") | transpose | map { el -> tuple( tuple(el[0],el[1].getName()) , el[1]   )   } 
         input_files = generate_input_files(params_files)
         opt_ratios = run_opt_run(input_files)
         obs = params_files.join(opt_ratios) | anal_observable
@@ -160,26 +164,49 @@ workflow optimize {
         opt_sims
 }
 
+process publish_file
+{
+    publishDir "$projectDir/agg", mode: 'symlink'
+    input:
+    path input_file
+    val name
+    output:
+    path name
+    """
+    cp $input_file $name
+    """
+}
+
+
+def filter_observable(files)
+{
+    return files.find { it.toString() ==~/.*rho\.dat$/ }
+}
+
 workflow run_main
 {
     take:
         sims
     main:
-        res = sims  | process_for_main_run | generate_input_files | run_main_run
+        sims2 = sims | process_for_main_run 
+        parameters = split_runs(sims2,"seed") | transpose | map { el -> tuple( tuple(el[0],el[1].getName()) , el[1]   )   }
+        input_files = generate_input_files(parameters)
+        res = run_main_run(input_files)
+        obs=res | map { it -> tuple(it[0],filter_observable(it[1]) ) }
+        obs=parameters.join(obs) | anal_observable
+        obs_collected = obs | map {el -> tuple("None",el[1] )    } | groupTuple | gather_observable | map {el -> el[1]}
+        publish_file(obs_collected,"rho.dat" )
     emit:
-        res
+        obs_collected
 }
 
-def filter_observable(files)
-{
-    return files.find { it ==~/.*rho\.dat$/ }
-}
 
 workflow
 {
-    opt_sims=split_runs( tuple("T0.6",params.runs) ) | transpose  |  optimize
-    out_main=run_main(opt_sims)
-    main_obs=out_main.map{ el -> tuple( el[0],filter_observable(el[1]) )  }
-    main_ob=opt_sims.join(main_obs) | anal_observable | map { el -> tuple("main",el[1]) }   | groupTuple() | gather_observable
+    opt_sims=split_runs( tuple("T0.6",params.runs) , "N") | transpose | optimize
+    main_obs=opt_sims | run_main
+    //out_main=run_main(opt_sims)
+    //main_obs=out_main.map{ el -> tuple( el[0],filter_observable(el[1]) )  }
+    //main_ob=opt_sims.join(main_obs) | anal_observable | map { el -> tuple("main",el[1]) }   | groupTuple() | gather_observable
 
 }
