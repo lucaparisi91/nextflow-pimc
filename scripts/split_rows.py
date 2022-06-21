@@ -15,7 +15,6 @@ parser.add_argument('--out', type=str,
                     help='Folder where to save splitted files',default=".")
 
 
-
 args = parser.parse_args()
 data=pd.read_csv( args.input_file ,delim_whitespace=True).reset_index(drop=True)
 for i,row in tqdm.tqdm(data.iterrows(),total=len(data)):

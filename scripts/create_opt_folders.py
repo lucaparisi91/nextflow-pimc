@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tqdm
 import argparse
+import copy
 
 parser = argparse.ArgumentParser(description="Schedule optimizations")
 parser.add_argument("input_file",type=str)
@@ -18,6 +19,8 @@ parser.add_argument('--n', type=int,
                     help='Number of optimizations to schedule',default=10)
 parser.add_argument('--ensamble', type=str,
                     help='Ensamble',default="canonical")
+parser.add_argument('--out', type=str,
+                    help='Output file containg',default="optimization_runs.dat")
 
 args = parser.parse_args()
 
@@ -31,12 +34,14 @@ ensamble=args.ensamble
 
 data=pd.read_csv( input_file ,delim_whitespace=True).reset_index(drop=True)
 
+datas=[]
 print("Creating optimization files...")
 for i,row in tqdm.tqdm(data.iterrows(),total=len(data)):
     data_opt = pd.DataFrame(  [row.values] , columns=row.index )
     CAS=np.logspace( minC, maxC,nOpt)
     for CA in CAS:
         data_opt["CA"]=CA
+        
         if ensamble == "semiCanonical":
             data_opt["CB"]=data_opt["CA"]
 
@@ -48,11 +53,9 @@ for i,row in tqdm.tqdm(data.iterrows(),total=len(data)):
 
         
         #js=singleComponentCanonical.generateInputFiles(data_opt)
-        opt_label="CA{:2.3e}".format(CA)
-        opt_file="parameters_{}.dat".format(opt_label)
-        data_opt.to_csv(opt_file,sep=" ")
+        opt_label="CA{:.2e}".format(CA)
+        data_opt["label"]=opt_label
+        datas.append(copy.deepcopy(data_opt))
 
-
-    #run_folder=os.path.join(folder_run,labels[i])    
-    #Path(run_folder).mkdir(parents=True, exist_ok=True)
-
+data=pd.concat(datas)
+data.to_csv(args.out,sep="\t")
