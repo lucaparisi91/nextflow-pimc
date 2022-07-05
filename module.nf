@@ -37,8 +37,6 @@ process generate_input_files
     """
 }
 
-
-
 process run_opt_run
 {
     publishDir "$projectDir/opt/${key[0]}_${key[1]}"
