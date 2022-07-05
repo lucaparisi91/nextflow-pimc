@@ -23,7 +23,7 @@ def gather(inputFiles):
         data=pd.read_csv( filename , delim_whitespace=True)
         datas.append(data)
 
-    data=pd.concat(datas)
+    data=pd.concat(datas).reset_index(drop=True)
     return (data)
 
 

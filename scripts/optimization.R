@@ -7,17 +7,12 @@ p <- arg_parser("Extimate The ratio between open and closed sector partition fun
 
 # Add command line arguments
 p <- add_argument(p, "ratios", help="Dataframe contining the output ratios")
-p <- add_argument(p, "--ensamble", help="canonical/semiCanonical ensamble", default="canonical")
+p <- add_argument(p, "--nComponents", help="Number of species", default=1)
 p <- add_argument(p, "--out", help="file name where to save a dataframe containing the partition functions", default="Z.dat")
 argv <- parse_args(p)
 
-
-
-create_single_component <- function(ratio_filename,Z_filename)
+create_single_component <- function(data)
 {
-
-  data=read_delim( ratio_filename,delim = "\t") %>% drop_na()
-
 
   parameter="CA"
   groups=c("N")
@@ -62,13 +57,14 @@ create_single_component <- function(ratio_filename,Z_filename)
   #ggsave("Z.pdf",plot)
   Z <- Z %>% ungroup() %>%summarise( ZA_error=sqrt(var(ZA)/length(ZA)),ZA=mean(ZA) )
 
-  write_delim(Z,Z_filename,delim="\t")
+  return (Z)
 }
 
-create_two_component <- function(ratio_filename,Z_filename)
+
+create_two_component <- function(data)
 {
+  
   # import 
-  data=read_delim(ratio_filename,delim = "\t") %>% drop_na()
   data$folder <- NULL
   data
   groups <- c()
@@ -80,18 +76,21 @@ create_two_component <- function(ratio_filename,Z_filename)
 
   data %>% split(  seq_along(rownames(data))%%n     ) %>% map_dfr ( ~ .x%>% summarise( across(.fns = mean  ) ) ) %>% mutate(iteration=seq_along(iteration) )
   }
-
+  
   data <- data %>% group_by( across(all_of(c(groups,"CA")))) %>% group_modify(  ~  blockAverage(.x) ) 
 
+  
   #plot <- ggplot( data=data,aes(x=.data[["iteration"]],y=.data[[ob]],color=as.factor(.data[[parameter]]) )) + geom_point( aes_string(y=ob)  ) + facet_grid( nBeads  ~N) 
 
   #ggplotly(plot)
-
+  
   ############### FILTERING ############################
 
   averageRatios <- data %>% group_by( across(all_of(c(groups,parameter)))) %>% summarise( across(.cols=c("ccRatio","ocRatio","coRatio","ooRatio"),.fns=mean) )
   filteredRatios <- averageRatios %>% filter(ccRatio<0.9  & ooRatio > 0.1)
   data <- inner_join( data, filteredRatios %>% select( .data[["CA"]])  )
+    
+  
   ################## EXTRACT Z #########################################
 
   noc <- function(data) { return (tibble( ZA =  log(mean(data[["ocRatio"]])/mean(data[["ccRatio"]])), ZAB =  log(mean(data[["ooRatio"]])/mean(data[["ccRatio"]]))  , ZB =  log(mean(data[["coRatio"]])/mean(data[["ccRatio"]]))
@@ -121,11 +120,32 @@ create_two_component <- function(ratio_filename,Z_filename)
 
   Z_summ <- Z %>% ungroup() %>%summarise( ZA_error=sqrt(var(ZA)/length(ZA)),ZA=mean(ZA),ZB_error=sqrt(var(ZB)/length(ZB)),ZB=mean(ZB),ZAB_error=sqrt(var(ZAB)/length(ZAB)),ZAB=mean(ZAB) )
 
-  write_delim(Z_summ,Z_filename,delim="\t")
+  return (Z_summ)
 }
 
-if (argv$ensamble == "semiCanonical") {
-  create_two_component(argv$ratios,argv$out)
-} else {
-  create_single_component(argv$ratios,argv$out)
+data=read_delim(argv$ratios,delim = "\t") %>% drop_na()
+
+if (argv$nComponents == 1) {
+  Z=create_single_component(data)
+} else if (argv$nComponents == 2)
+{
+  if ( ("P" %in% colnames(data) )  ) {
+
+    if ( data["P"][[1,1]] == 1  ) {
+    
+    Z=create_single_component(data %>% rename(cRatio=ccRatio,oRatio=ocRatio))
+    Z["ZB"]=0
+    Z["ZB_error"]=0
+    Z["ZAB_error"]=0
+    Z["ZAB"]=0
+    } else {
+      Z=create_two_component(data)  
+    }
+    
+  } else
+  {
+    Z=create_two_component(data)
+  }
+  
 }
+write_delim(Z,argv$out,delim="\t")

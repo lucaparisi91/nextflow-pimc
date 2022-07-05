@@ -12,13 +12,15 @@ import copy
 parser = argparse.ArgumentParser(description="Schedule optimizations")
 parser.add_argument("input_file",type=str)
 parser.add_argument('--minC', type=float,
-                    help='log of minC',default=-10)
+                    help='log of minC',default=-8)
 parser.add_argument('--maxC', type=float,
                     help='log of maxC',default=-4)
 parser.add_argument('--n', type=int,
                     help='Number of optimizations to schedule',default=10)
 parser.add_argument('--ensamble', type=str,
                     help='Ensamble',default="canonical")
+parser.add_argument('--nComponents', type=int,
+                    help='Number of components',default=1)
 parser.add_argument('--out', type=str,
                     help='Output file containg',default="optimization_runs.dat")
 
@@ -50,7 +52,17 @@ for i,row in tqdm.tqdm(data.iterrows(),total=len(data)):
                 data_opt["CB"]=data_opt["CA"]*(1+p0)/(1-p0)
 
             data_opt["CAB"]=data_opt["CA"]*data_opt["CB"]
+        
 
+        if ensamble == "canonical":
+            if args.nComponents == 2:
+                p0=np.array(data_opt["P"])
+                p0[p0==1]=0
+                
+                data_opt["CB"]=data_opt["CA"]*(1+p0)/(1-p0)
+                data_opt["CAB"]=data_opt["CA"]*data_opt["CB"]
+
+                    
         
         #js=singleComponentCanonical.generateInputFiles(data_opt)
         opt_label="CA{:.2e}".format(CA)
